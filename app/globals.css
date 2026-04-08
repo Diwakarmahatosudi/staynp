@@ -1,0 +1,137 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --nepal-crimson: 196 30 58;
+    --nepal-gold: 212 165 116;
+    --nepal-forest: 45 106 79;
+    --nepal-mountain: 30 58 95;
+  }
+
+  html {
+    scroll-behavior: smooth;
+  }
+
+  body {
+    @apply bg-nepal-sand text-nepal-slate antialiased;
+  }
+
+  ::selection {
+    @apply bg-nepal-crimson/20 text-nepal-crimson-dark;
+  }
+}
+
+@layer components {
+  .btn-primary {
+    @apply inline-flex items-center justify-center gap-2 rounded-xl bg-nepal-crimson px-6 py-3 text-sm font-semibold text-white transition-all duration-200 hover:bg-nepal-crimson-dark hover:shadow-nepal active:scale-[0.98];
+  }
+
+  .btn-secondary {
+    @apply inline-flex items-center justify-center gap-2 rounded-xl border-2 border-nepal-crimson px-6 py-3 text-sm font-semibold text-nepal-crimson transition-all duration-200 hover:bg-nepal-crimson hover:text-white active:scale-[0.98];
+  }
+
+  .btn-gold {
+    @apply inline-flex items-center justify-center gap-2 rounded-xl bg-nepal-gold px-6 py-3 text-sm font-semibold text-white transition-all duration-200 hover:bg-nepal-gold-dark hover:shadow-nepal active:scale-[0.98];
+  }
+
+  .card {
+    @apply rounded-2xl bg-white shadow-sm border border-nepal-gold-light/30 transition-all duration-300 hover:shadow-nepal;
+  }
+
+  .input-field {
+    @apply w-full rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm text-nepal-slate placeholder:text-gray-400 focus:border-nepal-crimson focus:outline-none focus:ring-2 focus:ring-nepal-crimson/20 transition-all;
+  }
+
+  .section-title {
+    @apply font-heading text-3xl font-bold text-nepal-slate md:text-4xl;
+  }
+
+  .mandala-divider {
+    @apply relative flex items-center justify-center py-4;
+  }
+
+  .mandala-divider::before,
+  .mandala-divider::after {
+    content: "";
+    @apply flex-1 border-t border-nepal-gold-light;
+  }
+
+  .mandala-divider::before {
+    @apply mr-4;
+  }
+
+  .mandala-divider::after {
+    @apply ml-4;
+  }
+
+  .badge-verified {
+    @apply inline-flex items-center gap-1 rounded-full bg-nepal-forest/10 px-3 py-1 text-xs font-semibold text-nepal-forest;
+  }
+
+  .badge-type {
+    @apply inline-flex items-center rounded-full bg-nepal-crimson/10 px-3 py-1 text-xs font-semibold text-nepal-crimson;
+  }
+
+  .price-tag {
+    @apply text-lg font-bold text-nepal-crimson;
+  }
+
+  .nav-link {
+    @apply text-sm font-medium text-nepal-slate/70 transition-colors hover:text-nepal-crimson;
+  }
+
+  .gradient-text {
+    @apply bg-gradient-to-r from-nepal-crimson via-nepal-gold-dark to-nepal-crimson bg-clip-text text-transparent;
+  }
+}
+
+@layer utilities {
+  .text-balance {
+    text-wrap: balance;
+  }
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+}
+::-webkit-scrollbar-track {
+  @apply bg-nepal-sand;
+}
+::-webkit-scrollbar-thumb {
+  @apply rounded-full bg-nepal-gold-light;
+}
+::-webkit-scrollbar-thumb:hover {
+  @apply bg-nepal-gold;
+}
+
+/* Nepali pattern overlay for hero sections */
+.nepal-pattern-overlay {
+  background-image:
+    radial-gradient(circle at 20% 50%, rgba(196, 30, 58, 0.03) 0%, transparent 50%),
+    radial-gradient(circle at 80% 20%, rgba(212, 165, 116, 0.05) 0%, transparent 50%),
+    radial-gradient(circle at 50% 80%, rgba(45, 106, 79, 0.03) 0%, transparent 50%);
+}
+
+/* Animation for cards */
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-fade-in-up {
+  animation: fadeInUp 0.6s ease-out forwards;
+}
+
+.animate-delay-100 { animation-delay: 100ms; }
+.animate-delay-200 { animation-delay: 200ms; }
+.animate-delay-300 { animation-delay: 300ms; }
+.animate-delay-400 { animation-delay: 400ms; }
