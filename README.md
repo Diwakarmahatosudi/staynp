@@ -120,9 +120,11 @@ StayNP connects travelers with verified local stays across all 75 districts of N
 | **Language** | TypeScript |
 | **Styling** | Tailwind CSS with custom Nepali theme |
 | **UI** | React 19, react-icons, react-hot-toast |
-| **Backend** | Supabase (Auth, Database, Storage) |
-| **Payments** | eSewa API, Khalti API |
-| **SMS** | AakashSMS API |
+| **Backend** | Next.js API Routes + Prisma ORM (SQLite → Postgres) |
+| **Auth** | Custom JWT sessions (httpOnly cookie) + bcryptjs |
+| **OTP** | Phone (Aakash SMS) + Email (Nodemailer / any SMTP) |
+| **Payments** | eSewa API + Khalti API (server-verified, DB-backed) |
+| **Validation** | Zod |
 | **Fonts** | Inter, Playfair Display |
 
 ---
@@ -140,41 +142,111 @@ StayNP connects travelers with verified local stays across all 75 districts of N
 git clone https://github.com/Diwakarmahatosudi/staynp.git
 cd staynp
 
-# Install dependencies
-npm install --legacy-peer-deps
+# Install dependencies (generates Prisma Client automatically)
+npm install
 
 # Set up environment variables
 cp .env.local.example .env.local
-# Edit .env.local with your Supabase, payment, and SMS credentials
+# Also copy the DATABASE_URL into a root .env so the Prisma CLI can see it:
+echo 'DATABASE_URL="file:./dev.db"' > .env
+
+# Create the SQLite database + schema
+npm run db:push
+
+# (Optional) seed demo hosts, properties, and a guest account
+npm run db:seed
 
 # Run the dev server
 npm run dev
 ```
 
+**Seeded demo accounts** (password is `Password123` for all):
+
+| Role  | Email               | Phone      |
+|-------|---------------------|------------|
+| Host  | sita@example.com    | 9841234567 |
+| Host  | ram@example.com     | 9851234567 |
+| Guest | guest@example.com   | 9801234567 |
+
+**Dev OTPs**: if you don't set up SMTP or Aakash SMS, every OTP code is printed to the Next.js terminal so you can copy-paste it during sign-in/sign-up.
+
 Open [http://localhost:3000](http://localhost:3000) in your browser.
 
 ### Environment Variables
 
+See `.env.local.example` for the full list. The essentials:
+
 ```env
-NEXT_PUBLIC_SUPABASE_URL=your_supabase_url
-NEXT_PUBLIC_SUPABASE_ANON_KEY=your_supabase_anon_key
-NEXT_PUBLIC_GOOGLE_MAPS_KEY=your_google_maps_key
-ESEWA_MERCHANT_CODE=your_esewa_merchant_code
-ESEWA_SECRET_KEY=your_esewa_secret
-KHALTI_SECRET_KEY=your_khalti_secret
-AAKASH_SMS_TOKEN=your_aakash_sms_token
+# Database (SQLite for dev, switch to postgres:// for prod)
+DATABASE_URL="file:./dev.db"
+
+# Long random string — used to sign JWT session tokens
+JWT_SECRET="change-me-to-a-long-random-secret"
+
+# Public app URL (used for payment redirects)
 NEXT_PUBLIC_APP_URL=http://localhost:3000
+
+# SMTP for email OTP + booking emails (optional in dev)
+SMTP_HOST=
+SMTP_PORT=587
+SMTP_USER=
+SMTP_PASS=
+SMTP_FROM="StayNP <no-reply@staynp.local>"
+
+# Aakash SMS for phone OTP (optional in dev)
+AAKASH_SMS_TOKEN=
+
+# eSewa / Khalti (required for real payment testing)
+ESEWA_MERCHANT_CODE=EPAYTEST
+ESEWA_SECRET_KEY="8gBm/:&EnhH.1/q"
+NEXT_PUBLIC_ESEWA_PAYMENT_URL=https://rc-epay.esewa.com.np/api/epay/main/v2/form
+KHALTI_SECRET_KEY=
 ```
 
-### Database Setup
+### Database & Prisma
 
-Run the SQL schema in your Supabase SQL Editor:
+The schema lives at `prisma/schema.prisma` (SQLite by default so it works out-of-the-box).
 
 ```bash
-# The schema is in supabase/schema.sql
-# It creates tables for profiles, properties, bookings, reviews
-# with Row Level Security policies and booking conflict triggers
+npm run db:push      # create/update the database to match the schema
+npm run db:studio    # open Prisma Studio (visual DB browser)
+npm run db:seed      # insert demo hosts / properties / guest
+npm run db:reset     # nuke and re-create with fresh seed data
 ```
+
+Switch to Postgres by setting `DATABASE_URL=postgresql://...` and changing `provider = "postgresql"` in `prisma/schema.prisma`, then run `npm run db:push`.
+
+### API Routes (backend)
+
+All backend logic is built on Next.js API routes — no external backend needed.
+
+| Route | Purpose |
+|-------|---------|
+| `POST /api/auth/signup` | Create account (phone + optional email), send OTP |
+| `POST /api/auth/login` | Password login, or OTP login (set `method: "otp"` + `code`) |
+| `POST /api/auth/send-otp` | Send a 6-digit OTP via SMS or email |
+| `POST /api/auth/verify-otp` | Verify OTP for signup/login/verify |
+| `POST /api/auth/reset-password` | Reset password using an OTP |
+| `GET  /api/auth/me` | Get the currently logged-in user |
+| `POST /api/auth/logout` | End current session |
+| `GET  /api/properties` | Search/list active properties |
+| `POST /api/properties` | Host: create listing |
+| `GET  /api/properties/:id` | Get one listing with reviews |
+| `PATCH /api/properties/:id` | Host: update own listing |
+| `DELETE /api/properties/:id` | Host: delete own listing |
+| `GET  /api/bookings?role=guest\|host` | List bookings for current user |
+| `POST /api/bookings` | Create a booking (enforces date conflicts) |
+| `GET  /api/bookings/:id` | Booking detail (guest or host) |
+| `PATCH /api/bookings/:id` | Update status (confirm / cancel / complete) |
+| `POST /api/payment/esewa` | Initiate eSewa payment for a booking |
+| `GET  /api/payment/esewa?action=verify` | eSewa success callback (server-verified) |
+| `POST /api/payment/khalti` | Initiate Khalti payment |
+| `GET  /api/payment/khalti?action=verify` | Khalti success callback (server-verified) |
+| `GET  /api/reviews?property_id=…` | List reviews for a property |
+| `POST /api/reviews` | Leave a review (only for guests who stayed) |
+| `POST /api/upload` | Upload property images (saved to `/public/uploads/`) |
+
+A typed fetch helper for the frontend is exported from `lib/api-client.ts` as `api.auth.*`, `api.properties.*`, `api.bookings.*`, `api.payments.*`, and `api.reviews.*`.
 
 ---
 
@@ -197,9 +269,18 @@ staynp/
 │   ├── host/                    # Host dashboard & new listing
 │   └── api/                     # API routes (booking, payment, SMS)
 ├── components/                  # Reusable React components
-├── lib/                         # Utilities (validation, payments, SMS)
+├── lib/                         # Utilities & backend helpers
+│   ├── db.ts                    #   Prisma client singleton
+│   ├── auth.ts                  #   JWT sessions, OTP, password hashing
+│   ├── email.ts                 #   Nodemailer + OTP/email templates
+│   ├── sms.ts                   #   Aakash SMS + dev console fallback
+│   ├── esewa.ts / khalti.ts     #   Payment gateway helpers
+│   ├── validation.ts            #   Nepal phone/email/password validators
+│   └── api-client.ts            #   Typed fetch wrapper for the frontend
 ├── types/                       # TypeScript interfaces & constants
-├── supabase/                    # Database schema
+├── prisma/                      # Prisma schema + seed script
+│   ├── schema.prisma
+│   └── seed.ts
 └── screenshots/                 # Website screenshots
 ```
 

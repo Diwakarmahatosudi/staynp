@@ -3,13 +3,27 @@
 import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { HiPhone, HiMail, HiArrowRight, HiEye, HiEyeOff, HiExclamationCircle, HiCheckCircle, HiRefresh } from "react-icons/hi";
+import {
+  HiPhone,
+  HiMail,
+  HiArrowRight,
+  HiEye,
+  HiEyeOff,
+  HiExclamationCircle,
+  HiCheckCircle,
+  HiRefresh,
+} from "react-icons/hi";
 import toast from "react-hot-toast";
 import {
-  isValidNepalPhone, getPhoneError, getOperator, formatNepalPhone,
-  isValidEmail, getEmailError, getPasswordError,
-  generateOTP, generateEmailCode, checkRateLimit, sanitizeInput,
+  isValidNepalPhone,
+  getPhoneError,
+  getOperator,
+  formatNepalPhone,
+  isValidEmail,
+  getEmailError,
+  checkRateLimit,
 } from "@/lib/validation";
+import { api } from "@/lib/api-client";
 
 type AuthMethod = "phone" | "email";
 type PhoneStep = "enter" | "otp";
@@ -23,9 +37,7 @@ export default function LoginPage() {
   const [phone, setPhone] = useState("");
   const [phoneStep, setPhoneStep] = useState<PhoneStep>("enter");
   const [otp, setOtp] = useState("");
-  const [sentOtp, setSentOtp] = useState("");
   const [otpTimer, setOtpTimer] = useState(0);
-  const [otpAttempts, setOtpAttempts] = useState(0);
 
   // Email state
   const [email, setEmail] = useState("");
@@ -33,25 +45,22 @@ export default function LoginPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [emailStep, setEmailStep] = useState<EmailStep>("enter");
   const [emailCode, setEmailCode] = useState("");
-  const [sentEmailCode, setSentEmailCode] = useState("");
   const [emailTimer, setEmailTimer] = useState(0);
 
   // General
   const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
 
-  // OTP countdown timer
   useEffect(() => {
     if (otpTimer <= 0) return;
-    const interval = setInterval(() => setOtpTimer((t) => t - 1), 1000);
-    return () => clearInterval(interval);
+    const id = setInterval(() => setOtpTimer((t) => t - 1), 1000);
+    return () => clearInterval(id);
   }, [otpTimer]);
 
-  // Email code countdown timer
   useEffect(() => {
     if (emailTimer <= 0) return;
-    const interval = setInterval(() => setEmailTimer((t) => t - 1), 1000);
-    return () => clearInterval(interval);
+    const id = setInterval(() => setEmailTimer((t) => t - 1), 1000);
+    return () => clearInterval(id);
   }, [emailTimer]);
 
   const clearErrors = useCallback(() => setErrors({}), []);
@@ -59,15 +68,15 @@ export default function LoginPage() {
   const handlePhoneChange = (value: string) => {
     const digits = value.replace(/\D/g, "").slice(0, 10);
     setPhone(digits);
-    if (errors.phone) {
-      const err = getPhoneError(digits);
-      if (!err) setErrors((prev) => { const { phone: _, ...rest } = prev; return rest; });
-    }
+    if (errors.phone) setErrors((p) => ({ ...p, phone: "" }));
   };
 
   const handleSendOTP = async () => {
     const phoneErr = getPhoneError(phone);
-    if (phoneErr) { setErrors({ phone: phoneErr }); return; }
+    if (phoneErr) {
+      setErrors({ phone: phoneErr });
+      return;
+    }
 
     const rl = checkRateLimit("otp-send", 3, 60000);
     if (!rl.allowed) {
@@ -77,66 +86,65 @@ export default function LoginPage() {
 
     setLoading(true);
     clearErrors();
-    await new Promise((r) => setTimeout(r, 1500));
 
-    const code = generateOTP();
-    setSentOtp(code);
+    const res = await api.auth.sendOtp({ channel: "phone", target: phone, purpose: "login" });
+    setLoading(false);
+
+    if (!res.ok) {
+      toast.error(res.error);
+      return;
+    }
+
     setPhoneStep("otp");
     setOtpTimer(120);
-    setOtpAttempts(0);
-    setLoading(false);
 
     const operator = getOperator(phone);
     toast.success(`OTP sent to +977 ${formatNepalPhone(phone)} (${operator})`, { duration: 4000 });
 
-    // In dev mode, show the code
-    if (process.env.NODE_ENV === "development") {
-      console.log(`[DEV] OTP Code: ${code}`);
-      toast(`Dev mode — OTP: ${code}`, { icon: "🔑", duration: 10000 });
+    if (res.data.dev_code) {
+      console.log(`[DEV] OTP Code: ${res.data.dev_code}`);
+      toast(`Dev — OTP: ${res.data.dev_code}`, { icon: "🔑", duration: 12000 });
     }
   };
 
   const handleVerifyOTP = async () => {
-    if (otp.length !== 6) { setErrors({ otp: "Enter the full 6-digit code" }); return; }
-
-    if (otpAttempts >= 5) {
-      toast.error("Too many wrong attempts. Request a new OTP.");
-      setPhoneStep("enter");
-      setOtp("");
+    if (otp.length !== 6) {
+      setErrors({ otp: "Enter the full 6-digit code" });
       return;
     }
 
     setLoading(true);
     clearErrors();
-    await new Promise((r) => setTimeout(r, 1200));
 
-    if (otp !== sentOtp) {
-      setOtpAttempts((a) => a + 1);
-      setErrors({ otp: `Invalid code. ${4 - otpAttempts} attempts remaining.` });
-      setLoading(false);
+    const res = await api.auth.loginWithOtp({ phone, code: otp });
+    setLoading(false);
+
+    if (!res.ok) {
+      setErrors({ otp: res.error });
       return;
     }
 
-    setLoading(false);
     toast.success("नमस्ते! Welcome back!");
     router.push("/");
+    router.refresh();
   };
 
   const handleResendOTP = async () => {
     if (otpTimer > 0) return;
     setOtp("");
-    setSentOtp("");
     await handleSendOTP();
   };
 
   const handleEmailLogin = async () => {
     const newErrors: Record<string, string> = {};
     const emailErr = getEmailError(email);
-    const passErr = getPasswordError(password);
     if (emailErr) newErrors.email = emailErr;
-    if (passErr) newErrors.password = passErr;
+    if (!password) newErrors.password = "Password is required";
 
-    if (Object.keys(newErrors).length > 0) { setErrors(newErrors); return; }
+    if (Object.keys(newErrors).length > 0) {
+      setErrors(newErrors);
+      return;
+    }
 
     const rl = checkRateLimit("email-login", 5, 60000);
     if (!rl.allowed) {
@@ -146,43 +154,71 @@ export default function LoginPage() {
 
     setLoading(true);
     clearErrors();
-    await new Promise((r) => setTimeout(r, 1500));
 
-    // Send verification code to email
-    const code = generateEmailCode();
-    setSentEmailCode(code);
-    setEmailStep("verify");
-    setEmailTimer(300);
+    const res = await api.auth.login({ email, password });
     setLoading(false);
 
+    if (!res.ok) {
+      // If account not verified, fall back to email OTP
+      if (res.status === 401) {
+        setErrors({ password: res.error });
+      } else {
+        toast.error(res.error);
+      }
+      return;
+    }
+
+    toast.success("नमस्ते! Welcome back!");
+    router.push("/");
+    router.refresh();
+  };
+
+  const handleSendEmailCode = async () => {
+    const emailErr = getEmailError(email);
+    if (emailErr) {
+      setErrors({ email: emailErr });
+      return;
+    }
+
+    setLoading(true);
+    clearErrors();
+    const res = await api.auth.sendOtp({ channel: "email", target: email, purpose: "login" });
+    setLoading(false);
+
+    if (!res.ok) {
+      toast.error(res.error);
+      return;
+    }
+
+    setEmailStep("verify");
+    setEmailTimer(300);
     toast.success(`Verification code sent to ${email}`, { duration: 4000 });
 
-    if (process.env.NODE_ENV === "development") {
-      console.log(`[DEV] Email Code: ${code}`);
-      toast(`Dev mode — Code: ${code}`, { icon: "🔑", duration: 10000 });
+    if (res.data.dev_code) {
+      console.log(`[DEV] Email Code: ${res.data.dev_code}`);
+      toast(`Dev — Code: ${res.data.dev_code}`, { icon: "🔑", duration: 12000 });
     }
   };
 
   const handleVerifyEmailCode = async () => {
-    if (emailCode.length !== 6) { setErrors({ emailCode: "Enter the full 6-digit code" }); return; }
-
-    setLoading(true);
-    clearErrors();
-    await new Promise((r) => setTimeout(r, 1200));
-
-    if (emailCode !== sentEmailCode) {
-      setErrors({ emailCode: "Invalid verification code" });
-      setLoading(false);
+    if (emailCode.length !== 6) {
+      setErrors({ emailCode: "Enter the full 6-digit code" });
       return;
     }
 
+    setLoading(true);
+    clearErrors();
+    const res = await api.auth.loginWithOtp({ email, code: emailCode });
     setLoading(false);
+
+    if (!res.ok) {
+      setErrors({ emailCode: res.error });
+      return;
+    }
+
     toast.success("नमस्ते! Welcome back!");
     router.push("/");
-  };
-
-  const handleGoogleLogin = () => {
-    toast("Google login will be available once Supabase is connected", { icon: "🔗" });
+    router.refresh();
   };
 
   const switchMethod = (m: AuthMethod) => {
@@ -208,13 +244,14 @@ export default function LoginPage() {
         </div>
 
         <div className="card p-6">
-          {/* Method toggle */}
           <div className="mb-6 flex rounded-xl bg-nepal-sand p-1">
             {(["phone", "email"] as const).map((m) => (
               <button
                 key={m}
                 onClick={() => switchMethod(m)}
-                className={`flex flex-1 items-center justify-center gap-2 rounded-lg py-2.5 text-sm font-medium transition-all ${method === m ? "bg-white text-nepal-crimson shadow-sm" : "text-gray-500 hover:text-nepal-slate"}`}
+                className={`flex flex-1 items-center justify-center gap-2 rounded-lg py-2.5 text-sm font-medium transition-all ${
+                  method === m ? "bg-white text-nepal-crimson shadow-sm" : "text-gray-500 hover:text-nepal-slate"
+                }`}
               >
                 {m === "phone" ? <HiPhone className="h-4 w-4" /> : <HiMail className="h-4 w-4" />}
                 {m === "phone" ? "Phone" : "Email"}
@@ -222,7 +259,7 @@ export default function LoginPage() {
             ))}
           </div>
 
-          {/* ========== PHONE LOGIN ========== */}
+          {/* ========== PHONE ========== */}
           {method === "phone" && phoneStep === "enter" && (
             <div className="space-y-4">
               <div>
@@ -251,14 +288,16 @@ export default function LoginPage() {
                   </p>
                 )}
                 {phone.length === 10 && isValidNepalPhone(phone) && (
-                  <p className="mt-1 text-xs text-nepal-forest">
-                    ✓ {getOperator(phone)} number detected
-                  </p>
+                  <p className="mt-1 text-xs text-nepal-forest">✓ {getOperator(phone)} number detected</p>
                 )}
                 <p className="mt-1 text-xs text-gray-400">We&apos;ll send a 6-digit OTP via SMS</p>
               </div>
-              <button onClick={handleSendOTP} disabled={loading || phone.length < 10} className="btn-primary w-full disabled:opacity-50">
-                {loading ? <Spinner /> : <>Send OTP <HiArrowRight className="h-4 w-4" /></>}
+              <button
+                onClick={handleSendOTP}
+                disabled={loading || phone.length < 10}
+                className="btn-primary w-full disabled:opacity-50"
+              >
+                {loading ? <Spinner /> : (<>Send OTP <HiArrowRight className="h-4 w-4" /></>)}
               </button>
             </div>
           )}
@@ -277,7 +316,10 @@ export default function LoginPage() {
                   inputMode="numeric"
                   placeholder="● ● ● ● ● ●"
                   value={otp}
-                  onChange={(e) => { setOtp(e.target.value.replace(/\D/g, "").slice(0, 6)); if (errors.otp) clearErrors(); }}
+                  onChange={(e) => {
+                    setOtp(e.target.value.replace(/\D/g, "").slice(0, 6));
+                    if (errors.otp) clearErrors();
+                  }}
                   className={`input-field text-center text-xl tracking-[0.6em] font-mono ${errors.otp ? "border-red-400" : ""}`}
                   maxLength={6}
                   autoFocus
@@ -288,7 +330,11 @@ export default function LoginPage() {
                   </p>
                 )}
               </div>
-              <button onClick={handleVerifyOTP} disabled={loading || otp.length < 6} className="btn-primary w-full disabled:opacity-50">
+              <button
+                onClick={handleVerifyOTP}
+                disabled={loading || otp.length < 6}
+                className="btn-primary w-full disabled:opacity-50"
+              >
                 {loading ? <Spinner /> : "Verify & Login"}
               </button>
               <div className="flex items-center justify-between text-xs">
@@ -298,16 +344,25 @@ export default function LoginPage() {
                   className={`flex items-center gap-1 ${otpTimer > 0 ? "text-gray-400" : "text-nepal-crimson hover:underline"}`}
                 >
                   <HiRefresh className="h-3.5 w-3.5" />
-                  {otpTimer > 0 ? `Resend in ${Math.floor(otpTimer / 60)}:${(otpTimer % 60).toString().padStart(2, "0")}` : "Resend OTP"}
+                  {otpTimer > 0
+                    ? `Resend in ${Math.floor(otpTimer / 60)}:${(otpTimer % 60).toString().padStart(2, "0")}`
+                    : "Resend OTP"}
                 </button>
-                <button onClick={() => { setPhoneStep("enter"); setOtp(""); clearErrors(); }} className="text-gray-500 hover:text-nepal-slate">
+                <button
+                  onClick={() => {
+                    setPhoneStep("enter");
+                    setOtp("");
+                    clearErrors();
+                  }}
+                  className="text-gray-500 hover:text-nepal-slate"
+                >
                   Change number
                 </button>
               </div>
             </div>
           )}
 
-          {/* ========== EMAIL LOGIN ========== */}
+          {/* ========== EMAIL ========== */}
           {method === "email" && emailStep === "enter" && (
             <div className="space-y-4">
               <div>
@@ -317,7 +372,10 @@ export default function LoginPage() {
                     type="email"
                     placeholder="you@gmail.com"
                     value={email}
-                    onChange={(e) => { setEmail(e.target.value); if (errors.email) { const err = getEmailError(e.target.value); if (!err) setErrors((p) => { const { email: _, ...r } = p; return r; }); } }}
+                    onChange={(e) => {
+                      setEmail(e.target.value);
+                      if (errors.email) setErrors((p) => ({ ...p, email: "" }));
+                    }}
                     className={`input-field ${errors.email ? "border-red-400" : ""}`}
                   />
                   {email && isValidEmail(email) && (
@@ -337,10 +395,17 @@ export default function LoginPage() {
                     type={showPassword ? "text" : "password"}
                     placeholder="Enter your password"
                     value={password}
-                    onChange={(e) => { setPassword(e.target.value); if (errors.password) { const err = getPasswordError(e.target.value); if (!err) setErrors((p) => { const { password: _, ...r } = p; return r; }); } }}
+                    onChange={(e) => {
+                      setPassword(e.target.value);
+                      if (errors.password) setErrors((p) => ({ ...p, password: "" }));
+                    }}
                     className={`input-field pr-10 ${errors.password ? "border-red-400" : ""}`}
                   />
-                  <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-nepal-slate">
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-nepal-slate"
+                  >
                     {showPassword ? <HiEyeOff className="h-5 w-5" /> : <HiEye className="h-5 w-5" />}
                   </button>
                 </div>
@@ -351,10 +416,14 @@ export default function LoginPage() {
                 )}
               </div>
               <button onClick={handleEmailLogin} disabled={loading} className="btn-primary w-full disabled:opacity-50">
-                {loading ? <Spinner /> : <>Continue <HiArrowRight className="h-4 w-4" /></>}
+                {loading ? <Spinner /> : (<>Log in <HiArrowRight className="h-4 w-4" /></>)}
               </button>
-              <button onClick={() => toast("Password reset will be available once Supabase is connected", { icon: "🔗" })} className="w-full text-center text-xs text-nepal-crimson hover:underline">
-                Forgot password?
+              <button
+                onClick={handleSendEmailCode}
+                disabled={loading || !isValidEmail(email)}
+                className="w-full text-center text-xs text-nepal-crimson hover:underline disabled:text-gray-300"
+              >
+                Log in with email code instead
               </button>
             </div>
           )}
@@ -373,7 +442,10 @@ export default function LoginPage() {
                   inputMode="numeric"
                   placeholder="● ● ● ● ● ●"
                   value={emailCode}
-                  onChange={(e) => { setEmailCode(e.target.value.replace(/\D/g, "").slice(0, 6)); if (errors.emailCode) clearErrors(); }}
+                  onChange={(e) => {
+                    setEmailCode(e.target.value.replace(/\D/g, "").slice(0, 6));
+                    if (errors.emailCode) clearErrors();
+                  }}
                   className={`input-field text-center text-xl tracking-[0.6em] font-mono ${errors.emailCode ? "border-red-400" : ""}`}
                   maxLength={6}
                   autoFocus
@@ -384,31 +456,39 @@ export default function LoginPage() {
                   </p>
                 )}
               </div>
-              <button onClick={handleVerifyEmailCode} disabled={loading || emailCode.length < 6} className="btn-primary w-full disabled:opacity-50">
+              <button
+                onClick={handleVerifyEmailCode}
+                disabled={loading || emailCode.length < 6}
+                className="btn-primary w-full disabled:opacity-50"
+              >
                 {loading ? <Spinner /> : "Verify & Login"}
               </button>
               <div className="flex items-center justify-between text-xs">
                 <span className="text-gray-400">
-                  {emailTimer > 0 ? `Code expires in ${Math.floor(emailTimer / 60)}:${(emailTimer % 60).toString().padStart(2, "0")}` : "Code expired"}
+                  {emailTimer > 0
+                    ? `Code expires in ${Math.floor(emailTimer / 60)}:${(emailTimer % 60).toString().padStart(2, "0")}`
+                    : "Code expired"}
                 </span>
-                <button onClick={() => { setEmailStep("enter"); setEmailCode(""); clearErrors(); }} className="text-gray-500 hover:text-nepal-slate">
+                <button
+                  onClick={() => {
+                    setEmailStep("enter");
+                    setEmailCode("");
+                    clearErrors();
+                  }}
+                  className="text-gray-500 hover:text-nepal-slate"
+                >
                   Change email
                 </button>
               </div>
             </div>
           )}
-
-          <div className="mandala-divider my-6"><span className="bg-white px-3 text-xs text-gray-400">or</span></div>
-
-          <button onClick={handleGoogleLogin} className="flex w-full items-center justify-center gap-3 rounded-xl border border-gray-200 py-3 text-sm font-medium text-nepal-slate transition-all hover:bg-gray-50 active:scale-[0.98]">
-            <svg className="h-5 w-5" viewBox="0 0 24 24"><path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 0 1-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z"/><path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/><path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/></svg>
-            Continue with Google
-          </button>
         </div>
 
         <p className="mt-6 text-center text-sm text-gray-500">
           Don&apos;t have an account?{" "}
-          <Link href="/auth/signup" className="font-semibold text-nepal-crimson hover:underline">Sign up</Link>
+          <Link href="/auth/signup" className="font-semibold text-nepal-crimson hover:underline">
+            Sign up
+          </Link>
         </p>
       </div>
     </div>

@@ -1,0 +1,164 @@
+// StayNP – Prisma schema (SQLite for zero-config local dev)
+// Switch `provider` to "postgresql" + a proper DATABASE_URL for production.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// ===== Users =====
+model User {
+  id               String    @id @default(cuid())
+  fullName         String
+  email            String?   @unique
+  phone            String?   @unique
+  passwordHash     String?
+  avatarUrl        String?
+  isHost           Boolean   @default(false)
+  isVerified       Boolean   @default(false)
+  emailVerified    Boolean   @default(false)
+  phoneVerified    Boolean   @default(false)
+  kycDocumentUrl   String?
+  kycStatus        String    @default("none") // none | pending | approved | rejected
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  properties       Property[]
+  bookings         Booking[]
+  reviews          Review[]
+  sessions         Session[]
+  otpCodes         OtpCode[]
+}
+
+// ===== Sessions (JWT refresh / server-side revocation) =====
+model Session {
+  id         String   @id @default(cuid())
+  userId     String
+  tokenHash  String   @unique
+  userAgent  String?
+  ip         String?
+  createdAt  DateTime @default(now())
+  expiresAt  DateTime
+
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+// ===== OTP codes (phone + email) =====
+model OtpCode {
+  id         String   @id @default(cuid())
+  userId     String?
+  channel    String   // "phone" | "email"
+  target     String   // phone number or email address
+  purpose    String   // "signup" | "login" | "reset" | "verify"
+  codeHash   String
+  attempts   Int      @default(0)
+  consumed   Boolean  @default(false)
+  createdAt  DateTime @default(now())
+  expiresAt  DateTime
+
+  user       User?    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([target, purpose])
+}
+
+// ===== Properties =====
+model Property {
+  id             String    @id @default(cuid())
+  title          String
+  description    String?
+  propertyType   String    // homestay | lodge | guest-house | ...
+  pricePerNight  Int
+  locationLat    Float?
+  locationLng    Float?
+  address        String?
+  district       String
+  region         String?
+  beds           Int       @default(1)
+  bedrooms       Int       @default(1)
+  bathrooms      Int       @default(1)
+  maxGuests      Int       @default(2)
+  amenities      String    @default("[]") // JSON string
+  mainImageUrl   String?
+  images         String    @default("[]") // JSON string
+  hostId         String
+  isActive       Boolean   @default(true)
+  isVerified     Boolean   @default(false)
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  host           User      @relation(fields: [hostId], references: [id], onDelete: Cascade)
+  bookings       Booking[]
+  reviews        Review[]
+
+  @@index([hostId])
+  @@index([district])
+  @@index([propertyType])
+}
+
+// ===== Bookings =====
+model Booking {
+  id             String    @id @default(cuid())
+  propertyId     String
+  guestId        String
+  checkIn        DateTime
+  checkOut       DateTime
+  guestsCount    Int       @default(1)
+  totalPrice     Int
+  status         String    @default("pending") // pending | confirmed | cancelled | completed
+  paymentMethod  String?   // esewa | khalti | card | bank_transfer
+  paymentId      String?
+  paymentStatus  String    @default("unpaid") // unpaid | initiated | paid | failed | refunded
+  guestPhone     String?
+  guestEmail     String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  property       Property  @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  guest          User      @relation(fields: [guestId], references: [id], onDelete: Cascade)
+  payments       Payment[]
+
+  @@index([propertyId])
+  @@index([guestId])
+  @@index([propertyId, checkIn, checkOut])
+}
+
+// ===== Payments (audit trail for eSewa/Khalti/etc.) =====
+model Payment {
+  id             String   @id @default(cuid())
+  bookingId      String
+  provider       String   // esewa | khalti | card | bank_transfer
+  amount         Int
+  currency       String   @default("NPR")
+  status         String   @default("initiated") // initiated | success | failed | refunded
+  providerRef    String?  @unique              // pidx, transaction_uuid, etc.
+  rawRequest     String?                       // JSON string
+  rawResponse    String?                       // JSON string
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  booking        Booking  @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+
+  @@index([bookingId])
+}
+
+// ===== Reviews =====
+model Review {
+  id          String   @id @default(cuid())
+  propertyId  String
+  guestId     String
+  rating      Int
+  comment     String?
+  createdAt   DateTime @default(now())
+
+  property    Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  guest       User     @relation(fields: [guestId], references: [id], onDelete: Cascade)
+
+  @@unique([propertyId, guestId])
+  @@index([propertyId])
+}

@@ -8,10 +8,20 @@ import { MdVerified } from "react-icons/md";
 import { MOCK_PROPERTIES, formatNPR } from "@/lib/mock-data";
 import toast from "react-hot-toast";
 
-const initialBookings = [
-  { id: "b1", guestName: "Alex Johnson", property: "Traditional Newari Homestay in Bhaktapur", checkIn: "2026-04-15", checkOut: "2026-04-18", total: 10500, status: "confirmed" as const },
-  { id: "b2", guestName: "Priya Patel", property: "Traditional Newari Homestay in Bhaktapur", checkIn: "2026-04-22", checkOut: "2026-04-25", total: 10500, status: "pending" as const },
-  { id: "b3", guestName: "Marco Rossi", property: "Boutique Heritage Hotel in Patan", checkIn: "2026-05-01", checkOut: "2026-05-05", total: 48000, status: "confirmed" as const },
+type BookingRow = {
+  id: string;
+  guestName: string;
+  property: string;
+  checkIn: string;
+  checkOut: string;
+  total: number;
+  status: "pending" | "confirmed" | "cancelled" | "completed";
+};
+
+const initialBookings: BookingRow[] = [
+  { id: "b1", guestName: "Alex Johnson", property: "Traditional Newari Homestay in Bhaktapur", checkIn: "2026-04-15", checkOut: "2026-04-18", total: 10500, status: "confirmed" },
+  { id: "b2", guestName: "Priya Patel", property: "Traditional Newari Homestay in Bhaktapur", checkIn: "2026-04-22", checkOut: "2026-04-25", total: 10500, status: "pending" },
+  { id: "b3", guestName: "Marco Rossi", property: "Boutique Heritage Hotel in Patan", checkIn: "2026-05-01", checkOut: "2026-05-05", total: 48000, status: "confirmed" },
 ];
 
 export default function HostDashboard() {
