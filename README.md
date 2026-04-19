@@ -4,6 +4,8 @@
 
 > नेपालमा बस्नुहोस् — *Stay in Nepal*
 
+### 🌐 [Checkout the live demo → staynp.vercel.app](https://staynp.vercel.app/)
+
 ---
 
 ## Screenshots
