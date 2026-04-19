@@ -20,7 +20,7 @@
     "bcryptjs": "^2.4.3",
     "date-fns": "^4.1.0",
     "jsonwebtoken": "^9.0.2",
-    "next": "15.1.7",
+    "next": "15.1.11",
     "nodemailer": "^6.9.16",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
